@@ -1,0 +1,89 @@
+参考海龟交易
+https://cn.tradingview.com/script/ZSJlXc15/
+
+
+这个策略有个问题就是  
+如果遇到单边下跌行情 很容易被套牢  不好止损 
+比如设置了8%的接针  止损5%  万一还能继续跌 那立马就亏损了
+如果被套要很久才能解套
+资金利用率太低了
+
+
+
+//@version=5
+strategy("long after pin", precision=2, overlay=true, calc_on_every_tick = true, initial_capital=1000, commission_type=strategy.commission.percent, commission_value=0.18, slippage=3, pyramiding=5, close_entries_rule="ANY", margin_long=100, margin_short=100)
+
+
+t1 = "ATR Length"
+t2 = "long signal"
+t3 = "break signal, first time to long percent"
+t4 = "EMA params, average price"
+
+//----------------------------------------FUNCTIONS---------------------------------------//
+
+//@function Displays text passed to `txt` when called.
+debugLabel(txt, color) =>
+    label.new(bar_index, high, text=txt, color=color, style=label.style_label_lower_right, textcolor=color.black, size=size.small)
+
+//@function which looks if the close date of the current bar falls inside the date range
+inBacktestPeriod(start, end) => (time >= start) and (time <= end)
+
+
+//---------------------------------------USER INPUTS--------------------------------------//
+atr_period = input.int(20, "ATR period", minval=1, group="My Parameters", tooltip=t1)
+atr_times = input.int(3, "times of ATR", minval=1, group="My Parameters", tooltip=t2)
+percentage_to_first_long = input.float(100, "first long  % of capital", maxval=100, minval=0, group="My Parameters", tooltip=t3) 
+ema_period = input.int(2, "EMA period", minval=1, group="My Parameters", tooltip=t1)
+
+startDate = input.time(title="Start Date", defval=timestamp("1 Jan 2020 00:00:00"), group="Backtesting Period")
+endDate = input.time(title="End Date", defval=timestamp("1 July 2024 03:20:00"), group="Backtesting Period")
+
+//----------------------------------VARIABLES INITIALISATION-----------------------------//
+
+atr = ta.atr(atr_period)
+ema = ta.ema(hlcc4, ema_period)
+
+var skip = false 
+
+var float buy_price_long = na 
+float exit_signal = na
+
+bool inRange = na 
+
+//------------------------------CHECKING SOME CONDITIONS ON EACH SCRIPT EXECUTION-------------------------------//
+
+inRange := inBacktestPeriod(startDate, endDate)
+var float equity = strategy.initial_capital + strategy.netprofit + strategy.openprofit
+
+
+if not inRange
+    strategy.close_all()
+    debugLabel("END OF BACKTESTING PERIOD : we close the trade", color=color.rgb(116, 116, 116))
+
+unit = (percentage_to_first_long / 100) * equity / close 
+
+// long signal  
+if not skip and (close < ema[1] - atr[1] * atr_times) and equity > 0 and not (strategy.position_size>0)
+    strategy.order("first long", strategy.long, qty = unit)
+    buy_price_long := close
+    skip := true 
+
+
+// short signal  
+if skip and strategy.position_size>0 and (close > buy_price_long + atr[1] * atr_times )  
+    strategy.close_all()
+    exit_signal := close
+    skip := false 
+
+
+
+plotchar(equity, "equity", "", location.top, color.rgb(11, 15, 8))
+
+plotchar(atr, "ATR", "", location.top, color.rgb(131, 5, 83))
+
+plot(ema, "5 day ema", color.rgb(4, 92, 53))
+
+plot(exit_signal, "Exit Signal", color.blue, style=plot.style_circles)
+
+
+
