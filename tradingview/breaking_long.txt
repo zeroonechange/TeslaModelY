@@ -1,0 +1,99 @@
+//@version=5
+strategy("breaking long", precision=2, overlay=true, calc_on_every_tick = true, initial_capital=100000, commission_type=strategy.commission.percent, commission_value=0.18, slippage=3, pyramiding=5, close_entries_rule="ANY", margin_long=100, margin_short=100)
+
+
+// 俩个 买入信号:
+//  1.如果是震荡  突破区间的高点  立马追买
+//  2.如果多个 ema 均线归于平静  然后快线突然向上突破 也可以视作突破 
+
+// 获利了结信号
+// 如果 最新价格 和 ema最慢线  比如200均线  相差50%   (price-ema200)/ema200 > 50%  获利离场
+
+// 参数设置 
+// EMA  20 50 100 200   四个参数 
+// ATR  10 或者 20      一个参数 
+
+t1 = "EMA fast line"
+t2 = "EMA normal line"
+t3 = "EMA slow line"
+t4 = "EMA very slow line"
+
+t5 = "ATR Length"
+t6 = "ATR times"
+
+t7 = "break signal, to long percent"
+
+//----------------------------------------FUNCTIONS---------------------------------------//
+
+//@function Displays text passed to `txt` when called.
+debugLabel(txt, color) =>
+    label.new(bar_index, high, text=txt, color=color, style=label.style_label_lower_right, textcolor=color.black, size=size.small)
+
+//@function which looks if the close date of the current bar falls inside the date range
+inBacktestPeriod(start, end) => (time >= start) and (time <= end)
+
+//---------------------------------------USER INPUTS--------------------------------------//
+ema_fast_params = input.int(20, "EMA fast line", minval=5, group="My Parameters", tooltip=t1)
+ema_normal_params = input.int(50, "EMA normal line", minval=10, group="My Parameters", tooltip=t2)
+ema_slow_params = input.int(100, "EMA slow line", minval=20, group="My Parameters", tooltip=t3)
+ema_very_slow_params = input.int(200, "EMA slow line", minval=50, group="My Parameters", tooltip=t4)
+
+atr_period = input.int(10, "ATR period", minval=5, group="My Parameters", tooltip=t5)
+atr_times = input.int(0, "times of ATR", minval=0, group="My Parameters", tooltip=t6)
+
+percentage_to_every_long = input.float(1, "every long  % of capital", maxval=10, minval=1, group="My Parameters", tooltip=t7)  
+
+startDate = input.time(title="Start Date", defval=timestamp("1 Jan 2020 00:00:00"), group="Backtesting Period")
+endDate = input.time(title="End Date", defval=timestamp("1 May 2024 03:20:00"), group="Backtesting Period")
+
+//----------------------------------VARIABLES INITIALISATION-----------------------------//
+
+ema_fast = ta.ema(close, ema_fast_params)
+ema_normal = ta.ema(close, ema_normal_params)
+ema_slow = ta.ema(close, ema_slow_params)
+ema_very_slow = ta.ema(close, ema_very_slow_params)
+
+atr = ta.atr(atr_period)
+
+float exit_signal = na
+bool inRange = na 
+
+//------------------------------CHECKING SOME CONDITIONS ON EACH SCRIPT EXECUTION-------------------------------//
+
+inRange := inBacktestPeriod(startDate, endDate)
+var float equity = strategy.initial_capital + strategy.netprofit + strategy.openprofit
+
+
+if not inRange
+    strategy.close_all()
+    debugLabel("END OF BACKTESTING PERIOD : we close the trade", color=color.rgb(116, 116, 116))
+
+
+unit = (percentage_to_every_long / 100) * equity / close 
+
+// long signal  
+if  (close > (ema_normal + atr * atr_times) ) and unit > 0
+    strategy.order("atr breaking long", strategy.long, qty = unit)
+
+if math.abs(ema_fast - ema_very_slow) < close * (1-0.97)
+    strategy.order("ema breaking long", strategy.long, qty = unit)
+
+// short signal  
+if strategy.position_size > unit and ( (close - ema_very_slow) / close) * (1-0.0018) > 0.2
+    strategy.order("sell", strategy.short, qty = unit)
+    exit_signal := close
+
+
+plotchar(equity, "equity", "", location.top, color.rgb(11, 15, 8))
+
+plotchar(atr, "ATR", "", location.top, color.rgb(131, 5, 83))
+
+plot(ema_fast, "ema fast line", color.rgb(179, 20, 8))
+plot(ema_normal, "ema normal line", color.rgb(199, 115, 19))
+plot(ema_slow, "ema slow line", color.rgb(102, 175, 142))
+plot(ema_very_slow, "ema very slow line", color.rgb(6, 22, 112))
+
+plot(exit_signal, "Exit Signal", color.blue, style=plot.style_circles)
+
+
+
